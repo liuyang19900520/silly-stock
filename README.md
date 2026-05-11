@@ -1,36 +1,90 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Silly Stock
+
+Silly Stock is a small AI-native stock research MVP. The current version keeps the product intentionally simple:
+
+- Enter a stock symbol.
+- Paste a JSON rule document.
+- Fetch the latest available market snapshot.
+- Match the snapshot against your rules.
+- Save checked stocks into a local registered list.
+
+It supports automatic market detection for common US and Japanese stock symbols.
+
+> This tool is research support only. It does not provide buy, sell, or hold advice.
+
+## Features
+
+- JSON-only rule input
+- US and Japan market detection
+- Delayed quote lookup through Stooq CSV data
+- Mock fallback data when the market request fails
+- Local registered-stock list stored in browser `localStorage`
+- Rule match summary and per-rule result display
+- GitHub Actions CI for lint and production build
+
+## Tech Stack
+
+- Next.js App Router
+- React
+- TypeScript
+- CSS Modules
+- GitHub Actions
 
 ## Getting Started
 
-First, run the development server:
+Install dependencies:
+
+```bash
+npm ci
+```
+
+Run the development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run dev
+npm run lint
+npm run typecheck
+npm run build
+npm run start
+```
 
-## Learn More
+## Rules
 
-To learn more about Next.js, take a look at the following resources:
+Rules must be JSON. See [docs/rules-json.md](docs/rules-json.md).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Example:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```json
+{
+  "rules": [
+    {
+      "field": "market",
+      "operator": "=",
+      "value": "US",
+      "conclusion": "This matched my US stock rule set"
+    },
+    {
+      "field": "price",
+      "operator": "<",
+      "value": 200,
+      "conclusion": "Price is inside my preferred range"
+    }
+  ]
+}
+```
 
-## Deploy on Vercel
+## Deployment
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+See [docs/deployment.md](docs/deployment.md).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Recommended low-cost default: Vercel.
+
+AWS Amplify is also supported and is a good option if this project will later integrate deeply with AWS services.
