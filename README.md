@@ -32,6 +32,8 @@ It supports automatic market detection for common US and Japanese stock symbols.
 
 ## Getting Started
 
+Production URL: [https://silly-stock.vercel.app](https://silly-stock.vercel.app)
+
 Install dependencies:
 
 ```bash
