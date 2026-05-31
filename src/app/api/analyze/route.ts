@@ -17,7 +17,22 @@ export async function POST(request: Request) {
   }
 
   const rulesDocument = body.rulesDocument ?? "";
-  const snapshot = await fetchMarketSnapshot(symbol);
+  let snapshot;
+
+  try {
+    snapshot = await fetchMarketSnapshot(symbol);
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Market data is currently unavailable.",
+      },
+      { status: 503 },
+    );
+  }
+
   let rules;
 
   try {

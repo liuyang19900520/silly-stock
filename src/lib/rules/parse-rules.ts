@@ -8,6 +8,8 @@ const supportedFields = new Set<keyof MarketSnapshot>([
   "open",
   "high",
   "low",
+  "movingAverage100",
+  "movingAverage200",
   "volume",
   "changePercent",
   "currency",

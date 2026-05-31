@@ -12,5 +12,17 @@ export async function GET(_request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Missing stock symbol" }, { status: 400 });
   }
 
-  return NextResponse.json(await fetchMarketSnapshot(symbol));
+  try {
+    return NextResponse.json(await fetchMarketSnapshot(symbol));
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Market data is currently unavailable.",
+      },
+      { status: 503 },
+    );
+  }
 }

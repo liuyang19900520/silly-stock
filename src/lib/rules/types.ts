@@ -8,6 +8,8 @@ export type MarketSnapshot = {
   open: number;
   high: number;
   low: number;
+  movingAverage100: number | null;
+  movingAverage200: number | null;
   volume: number;
   changePercent: number;
   currency: string;

@@ -1,26 +1,18 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import styles from "@/app/page.module.css";
+import {
+  createStock,
+  formatJson,
+  indicatorTemplate,
+  now,
+  strategyTemplate,
+} from "@/lib/strategy-library/templates";
+import { JsonFile, StockFolder } from "@/lib/strategy-library/types";
 
 type ViewMode = "manage" | "dashboard";
-type JsonFileKind = "strategy" | "indicator";
-type Decision = "超买" | "买入" | "持有" | "卖出" | "超卖";
-
-type JsonFile = {
-  id: string;
-  name: string;
-  kind: JsonFileKind;
-  content: string;
-  updatedAt: string;
-};
-
-type StockFolder = {
-  symbol: string;
-  market: "US" | "JP" | "UNKNOWN";
-  name: string;
-  files: JsonFile[];
-};
+type Decision = "Overbought" | "Buy" | "Hold" | "Sell" | "Oversold";
 
 type MarketSnapshot = {
   symbol: string;
@@ -30,11 +22,18 @@ type MarketSnapshot = {
   open: number;
   high: number;
   low: number;
+  movingAverage100: number | null;
+  movingAverage200: number | null;
   volume: number;
   changePercent: number;
   currency: string;
   source: string;
   updatedAt: string;
+};
+
+type SnapshotResult = {
+  snapshot?: MarketSnapshot;
+  error?: string;
 };
 
 type IndicatorConfig = {
@@ -55,102 +54,6 @@ type StrategyConfig = {
   };
 };
 
-const storageKey = "silly-stock.strategy-library.v1";
-
-function now() {
-  return new Date().toISOString();
-}
-
-function detectMarket(symbol: string): StockFolder["market"] {
-  const normalized = symbol.trim().toUpperCase();
-  if (/^\d{4}(\.(T|JP))?$/.test(normalized)) return "JP";
-  if (/^[A-Z][A-Z0-9.-]*$/.test(normalized)) return "US";
-  return "UNKNOWN";
-}
-
-function formatJson(value: unknown) {
-  return JSON.stringify(value, null, 2);
-}
-
-function strategyTemplate(symbol: string, market = detectMarket(symbol), name = `${symbol} strategy`) {
-  return formatJson({
-    symbol,
-    market,
-    name,
-    enabledIndicators: ["pe_ratio"],
-    decisionPolicy: {
-      overboughtScore: 85,
-      buyScore: 70,
-      holdScore: 45,
-      sellScore: 25,
-      oversoldScore: 15,
-    },
-  });
-}
-
-function indicatorTemplate(symbol: string, indicatorId = "pe_ratio") {
-  return formatJson({
-    symbol,
-    indicatorId,
-    label: "市盈率",
-    calculator: "pe_ratio",
-    weight: 20,
-    params: {},
-    scoring: [
-      { when: "<= 15", score: 90, reason: "市盈率较低，估值偏便宜" },
-      { when: "<= 25", score: 70, reason: "市盈率处于可接受范围" },
-      { when: "<= 35", score: 45, reason: "市盈率偏高，需要谨慎" },
-      { when: "> 35", score: 20, reason: "市盈率较高，估值压力较大" },
-    ],
-  });
-}
-
-function createStock(symbol: string, name?: string): StockFolder {
-  const normalized = symbol.trim().toUpperCase();
-  const market = detectMarket(normalized);
-  const stockName = name?.trim() || `${normalized} Research Folder`;
-
-  return {
-    symbol: normalized,
-    market,
-    name: stockName,
-    files: [
-      {
-        id: `${normalized}:strategy`,
-        name: "strategy.json",
-        kind: "strategy",
-        content: strategyTemplate(normalized, market, stockName),
-        updatedAt: now(),
-      },
-      {
-        id: `${normalized}:indicator:pe_ratio`,
-        name: "indicators/pe_ratio.json",
-        kind: "indicator",
-        content: indicatorTemplate(normalized),
-        updatedAt: now(),
-      },
-    ],
-  };
-}
-
-const seedLibrary: StockFolder[] = [
-  createStock("JNJ", "Johnson & Johnson"),
-  createStock("7203", "Toyota Motor"),
-];
-
-function loadLibrary() {
-  if (typeof window === "undefined") return seedLibrary;
-  const stored = window.localStorage.getItem(storageKey);
-  if (!stored) return seedLibrary;
-
-  try {
-    return JSON.parse(stored) as StockFolder[];
-  } catch {
-    window.localStorage.removeItem(storageKey);
-    return seedLibrary;
-  }
-}
-
 function parseJson<T>(content: string): T | null {
   try {
     return JSON.parse(content) as T;
@@ -170,6 +73,14 @@ function validateJson(content: string) {
 
 function readSnapshotValue(snapshot: MarketSnapshot, calculator?: string) {
   if (!calculator) return null;
+  if (calculator === "price_vs_ma100") {
+    if (!snapshot.movingAverage100) return null;
+    return Number((((snapshot.price - snapshot.movingAverage100) / snapshot.movingAverage100) * 100).toFixed(2));
+  }
+  if (calculator === "price_vs_ma200") {
+    if (!snapshot.movingAverage200) return null;
+    return Number((((snapshot.price - snapshot.movingAverage200) / snapshot.movingAverage200) * 100).toFixed(2));
+  }
   const key = calculator as keyof MarketSnapshot;
   return typeof snapshot[key] === "number" ? (snapshot[key] as number) : null;
 }
@@ -189,11 +100,11 @@ function conditionMatches(value: number, condition: string) {
 
 function decisionFromScore(score: number, strategy: StrategyConfig | null): Decision {
   const policy = strategy?.decisionPolicy ?? {};
-  if (score >= (policy.overboughtScore ?? 85)) return "超买";
-  if (score >= (policy.buyScore ?? 70)) return "买入";
-  if (score >= (policy.holdScore ?? 45)) return "持有";
-  if (score >= (policy.sellScore ?? 25)) return "卖出";
-  return "超卖";
+  if (score >= (policy.overboughtScore ?? 85)) return "Overbought";
+  if (score >= (policy.buyScore ?? 70)) return "Buy";
+  if (score >= (policy.holdScore ?? 45)) return "Hold";
+  if (score >= (policy.sellScore ?? 25)) return "Sell";
+  return "Oversold";
 }
 
 function evaluateStock(stock: StockFolder, snapshot?: MarketSnapshot) {
@@ -205,7 +116,7 @@ function evaluateStock(stock: StockFolder, snapshot?: MarketSnapshot) {
     .filter((indicator): indicator is IndicatorConfig => Boolean(indicator));
 
   if (!snapshot || indicators.length === 0) {
-    return { score: 50, decision: "持有" as Decision, reason: "等待行情或指标配置。" };
+    return { score: 50, decision: "Hold" as Decision, reason: "Waiting for market data or indicator configuration." };
   }
 
   let weightedScore = 0;
@@ -225,8 +136,8 @@ function evaluateStock(stock: StockFolder, snapshot?: MarketSnapshot) {
     totalWeight += weight;
     reasons.push(
       value === null
-        ? `${indicator.label ?? indicator.indicatorId}: 当前行情缺少 ${indicator.calculator}，按中性处理`
-        : `${indicator.label ?? indicator.indicatorId}: ${value} / ${matchedRule?.reason ?? "未命中规则，按中性处理"}`,
+        ? `${indicator.label ?? indicator.indicatorId}: market snapshot does not include ${indicator.calculator}; using neutral score.`
+        : `${indicator.label ?? indicator.indicatorId}: ${value} / ${matchedRule?.reason ?? "No rule matched; using neutral score."}`,
     );
   }
 
@@ -234,20 +145,22 @@ function evaluateStock(stock: StockFolder, snapshot?: MarketSnapshot) {
   return {
     score,
     decision: decisionFromScore(score, strategy),
-    reason: reasons[0] ?? "无指标说明。",
+    reason: reasons[0] ?? "No indicator explanation.",
   };
 }
 
 export default function StockWorkbench() {
-  const [library, setLibrary] = useState<StockFolder[]>(loadLibrary);
-  const [selectedSymbol, setSelectedSymbol] = useState(library[0]?.symbol ?? "");
-  const [selectedFileId, setSelectedFileId] = useState(library[0]?.files[0]?.id ?? "");
-  const [draft, setDraft] = useState(library[0]?.files[0]?.content ?? "");
+  const [library, setLibrary] = useState<StockFolder[]>([]);
+  const [selectedSymbol, setSelectedSymbol] = useState("");
+  const [selectedFileId, setSelectedFileId] = useState("");
+  const [draft, setDraft] = useState("");
   const [newSymbol, setNewSymbol] = useState("");
   const [message, setMessage] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("manage");
-  const [snapshots, setSnapshots] = useState<Record<string, MarketSnapshot>>({});
+  const [snapshots, setSnapshots] = useState<Record<string, SnapshotResult>>({});
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLibraryLoading, setIsLibraryLoading] = useState(true);
+  const [isSavingLibrary, setIsSavingLibrary] = useState(false);
 
   const selectedStock = library.find((stock) => stock.symbol === selectedSymbol) ?? library[0];
   const selectedFile =
@@ -267,15 +180,67 @@ export default function StockWorkbench() {
     () =>
       library.map((stock) => ({
         stock,
-        snapshot: snapshots[stock.symbol],
-        evaluation: evaluateStock(stock, snapshots[stock.symbol]),
+        snapshot: snapshots[stock.symbol]?.snapshot,
+        error: snapshots[stock.symbol]?.error,
+        evaluation: evaluateStock(stock, snapshots[stock.symbol]?.snapshot),
       })),
     [library, snapshots],
   );
 
-  function persist(next: StockFolder[]) {
+  useEffect(() => {
+    async function loadLibrary() {
+      setIsLibraryLoading(true);
+
+      try {
+        const response = await fetch("/api/strategy-library");
+        const body = (await response.json()) as { library?: StockFolder[]; error?: string };
+
+        if (!response.ok) {
+          throw new Error(body.error ?? "Failed to load strategy library.");
+        }
+
+        const next = body.library ?? [];
+        setLibrary(next);
+        setSelectedSymbol(next[0]?.symbol ?? "");
+        setSelectedFileId(next[0]?.files[0]?.id ?? "");
+        setDraft(next[0]?.files[0]?.content ?? "");
+        setMessage(next.length ? "Strategy library loaded from S3." : "S3 library is empty. Add a stock template.");
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Failed to load strategy library.");
+      } finally {
+        setIsLibraryLoading(false);
+      }
+    }
+
+    void loadLibrary();
+  }, []);
+
+  async function persist(next: StockFolder[], successMessage: string) {
+    const previous = library;
+
     setLibrary(next);
-    window.localStorage.setItem(storageKey, JSON.stringify(next));
+    setIsSavingLibrary(true);
+    setMessage("Saving strategy library to S3...");
+
+    try {
+      const response = await fetch("/api/strategy-library", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ library: next }),
+      });
+      const body = (await response.json().catch(() => null)) as { error?: string } | null;
+
+      if (!response.ok) {
+        throw new Error(body?.error ?? "Failed to save strategy library.");
+      }
+
+      setMessage(successMessage);
+    } catch (error) {
+      setLibrary(previous);
+      setMessage(error instanceof Error ? error.message : "Failed to save strategy library.");
+    } finally {
+      setIsSavingLibrary(false);
+    }
   }
 
   function openDashboard() {
@@ -291,14 +256,20 @@ export default function StockWorkbench() {
       const entries = await Promise.all(
         library.map(async (stock) => {
           const response = await fetch(`/api/stocks/${encodeURIComponent(stock.symbol)}/snapshot`);
-          if (!response.ok) throw new Error(`Failed to load ${stock.symbol}`);
-          return [stock.symbol, (await response.json()) as MarketSnapshot] as const;
+          if (!response.ok) {
+            const body = (await response.json().catch(() => null)) as { error?: string } | null;
+            return [
+              stock.symbol,
+              { error: body?.error ?? `Market data unavailable for ${stock.symbol}.` },
+            ] as const;
+          }
+          return [stock.symbol, { snapshot: (await response.json()) as MarketSnapshot }] as const;
         }),
       );
       setSnapshots(Object.fromEntries(entries));
-      setMessage("股票信息已刷新。");
+      setMessage("Market data refreshed.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "刷新失败。");
+      setMessage(error instanceof Error ? error.message : "Refresh failed.");
     } finally {
       setIsRefreshing(false);
     }
@@ -325,29 +296,34 @@ export default function StockWorkbench() {
     const normalized = newSymbol.trim().toUpperCase();
 
     if (!normalized) {
-      setMessage("请输入股票代码。");
+      setMessage("Enter a stock symbol.");
       return;
     }
 
     if (library.some((stock) => stock.symbol === normalized || stock.symbol.replace(".T", "") === normalized)) {
-      setMessage("这个股票已经存在。");
+      setMessage("This stock already exists.");
       return;
     }
 
     const stock = createStock(normalized);
-    persist([stock, ...library]);
+    void persist([stock, ...library], "Stock folder saved to S3.");
     setNewSymbol("");
     setSelectedSymbol(stock.symbol);
     setSelectedFileId(stock.files[0].id);
     setDraft(stock.files[0].content);
-    setMessage("已用模板新增股票文件夹。");
+    setMessage("Stock folder created from templates.");
     setViewMode("manage");
   }
 
   function addIndicator() {
     if (!selectedStock) return;
     const existingCount = selectedStock.files.filter((file) => file.kind === "indicator").length;
-    const indicatorId = existingCount === 0 ? "pe_ratio" : `custom_indicator_${existingCount + 1}`;
+    const indicatorId =
+      existingCount === 0
+        ? "price_vs_ma100"
+        : existingCount === 1
+          ? "price_vs_ma200"
+          : `custom_indicator_${existingCount + 1}`;
     const file: JsonFile = {
       id: `${selectedStock.symbol}:indicator:${indicatorId}:${Date.now()}`,
       name: `indicators/${indicatorId}.json`,
@@ -356,14 +332,15 @@ export default function StockWorkbench() {
       updatedAt: now(),
     };
 
-    persist(
+    void persist(
       library.map((stock) =>
         stock.symbol === selectedStock.symbol ? { ...stock, files: [...stock.files, file] } : stock,
       ),
+      "Indicator JSON saved to S3.",
     );
     setSelectedFileId(file.id);
     setDraft(file.content);
-    setMessage("已新增指标 JSON 模板。");
+    setMessage("Indicator JSON template added.");
   }
 
   function addStrategyIfMissing() {
@@ -376,20 +353,21 @@ export default function StockWorkbench() {
       updatedAt: now(),
     };
 
-    persist(
+    void persist(
       library.map((stock) =>
         stock.symbol === selectedStock.symbol ? { ...stock, files: [file, ...stock.files] } : stock,
       ),
+      "strategy.json saved to S3.",
     );
     setSelectedFileId(file.id);
     setDraft(file.content);
-    setMessage("已新增 strategy.json 模板。");
+    setMessage("strategy.json template added.");
   }
 
   function saveFile() {
     if (!selectedStock || !selectedFile) return;
     if (jsonError) {
-      setMessage(`JSON 还不能保存：${jsonError}`);
+      setMessage(`Cannot save JSON yet: ${jsonError}`);
       return;
     }
 
@@ -399,7 +377,7 @@ export default function StockWorkbench() {
         ? `indicators/${parsed.indicatorId}.json`
         : selectedFile.name;
 
-    persist(
+    void persist(
       library.map((stock) =>
         stock.symbol === selectedStock.symbol
           ? {
@@ -409,43 +387,42 @@ export default function StockWorkbench() {
                   ? { ...file, name: nextName, content: draft, updatedAt: now() }
                   : file,
               ),
-            }
+          }
           : stock,
       ),
+      "JSON saved to S3.",
     );
-    setMessage("已保存 JSON。");
   }
 
   function formatDraftJson() {
     const parsed = parseJson<unknown>(draft);
     if (parsed === null) {
-      setMessage(`无法格式化：${jsonError}`);
+      setMessage(`Cannot format JSON: ${jsonError}`);
       return;
     }
     setDraft(formatJson(parsed));
-    setMessage("JSON 已自动格式化。");
+    setMessage("JSON formatted.");
   }
 
   function deleteFile() {
     if (!selectedStock || !selectedFile) return;
     const nextFiles = selectedStock.files.filter((file) => file.id !== selectedFile.id);
-    persist(
+    void persist(
       library.map((stock) =>
         stock.symbol === selectedStock.symbol ? { ...stock, files: nextFiles } : stock,
       ),
+      "JSON file deleted from S3.",
     );
     setSelectedFileId(nextFiles[0]?.id ?? "");
     setDraft(nextFiles[0]?.content ?? "");
-    setMessage("已删除 JSON 文件。");
   }
 
   function deleteStock(symbol: string) {
     const next = library.filter((stock) => stock.symbol !== symbol);
-    persist(next);
+    void persist(next, "Stock folder deleted from S3.");
     setSelectedSymbol(next[0]?.symbol ?? "");
     setSelectedFileId(next[0]?.files[0]?.id ?? "");
     setDraft(next[0]?.files[0]?.content ?? "");
-    setMessage("已删除股票文件夹。");
   }
 
   return (
@@ -453,19 +430,19 @@ export default function StockWorkbench() {
       <section className={styles.header}>
         <div>
           <p className={styles.kicker}>Silly Stock</p>
-          <h1>{viewMode === "manage" ? "股票策略 JSON 文件库" : "股票信息与购买建议一览"}</h1>
+          <h1>{viewMode === "manage" ? "Stock Strategy JSON Library" : "Stock Overview and Recommendations"}</h1>
         </div>
         <div className={styles.headerTools}>
           <div className={styles.viewTabs}>
             <button className={viewMode === "manage" ? styles.activeTab : ""} onClick={() => setViewMode("manage")}>
-              管理 JSON
+              Manage JSON
             </button>
             <button className={viewMode === "dashboard" ? styles.activeTab : ""} onClick={openDashboard}>
-              股票一览
+              Stock Overview
             </button>
           </div>
           <form className={styles.symbolForm} onSubmit={addStock}>
-            <label htmlFor="new-symbol">新增股票</label>
+            <label htmlFor="new-symbol">Add stock</label>
             <div>
               <input
                 id="new-symbol"
@@ -474,9 +451,10 @@ export default function StockWorkbench() {
                 placeholder="JNJ / 7203"
                 spellCheck={false}
               />
-              <button>新增模板</button>
+              <button disabled={isSavingLibrary || isLibraryLoading}>Add template</button>
             </div>
           </form>
+          {isLibraryLoading ? <p className={styles.statusMessage}>Loading strategy library from S3...</p> : null}
         </div>
       </section>
 
@@ -486,7 +464,7 @@ export default function StockWorkbench() {
             <div className={styles.panelHead}>
               <div>
                 <p className={styles.kicker}>Stocks</p>
-                <h2>股票一览</h2>
+                <h2>Stock list</h2>
               </div>
               <span>{library.length}</span>
             </div>
@@ -523,8 +501,8 @@ export default function StockWorkbench() {
                   <span>Market: {selectedStock.market}</span>
                 </div>
                 <div className={styles.fileActions}>
-                  <button onClick={addStrategyIfMissing}>+ strategy</button>
-                  <button onClick={addIndicator}>+ indicator</button>
+                  <button disabled={isSavingLibrary} onClick={addStrategyIfMissing}>+ strategy</button>
+                  <button disabled={isSavingLibrary} onClick={addIndicator}>+ indicator</button>
                 </div>
                 <div className={styles.fileTree}>
                   <div className={styles.folderLine}>▾ {selectedStock.symbol}/</div>
@@ -539,12 +517,12 @@ export default function StockWorkbench() {
                     </button>
                   ))}
                 </div>
-                <button className={styles.dangerButton} onClick={() => deleteStock(selectedStock.symbol)}>
-                  删除股票文件夹
+                <button className={styles.dangerButton} disabled={isSavingLibrary} onClick={() => deleteStock(selectedStock.symbol)}>
+                  Delete stock folder
                 </button>
               </>
             ) : (
-              <div className={styles.emptyList}>先新增一个股票。</div>
+              <div className={styles.emptyList}>Add a stock first.</div>
             )}
           </aside>
 
@@ -570,22 +548,22 @@ export default function StockWorkbench() {
                     {jsonError ? (
                       <p className={styles.error}>Invalid JSON: {jsonError}</p>
                     ) : (
-                      <p className={styles.success}>JSON 格式有效</p>
+                      <p className={styles.success}>JSON is valid</p>
                     )}
                     {message ? <p className={styles.statusMessage}>{message}</p> : null}
                   </div>
                   <div className={styles.editorActions}>
-                    <button onClick={formatDraftJson}>格式化 JSON</button>
-                    <button onClick={() => setDraft(selectedFile.content)}>还原</button>
-                    <button onClick={deleteFile}>删除 JSON</button>
-                    <button disabled={Boolean(jsonError)} onClick={saveFile}>
-                      保存
+                    <button onClick={formatDraftJson}>Format JSON</button>
+                    <button onClick={() => setDraft(selectedFile.content)}>Revert</button>
+                    <button disabled={isSavingLibrary} onClick={deleteFile}>Delete JSON</button>
+                    <button disabled={Boolean(jsonError) || isSavingLibrary} onClick={saveFile}>
+                      {isSavingLibrary ? "Saving" : "Save"}
                     </button>
                   </div>
                 </div>
               </>
             ) : (
-              <div className={styles.empty}>选择一个 JSON 文件，或新增股票模板。</div>
+              <div className={styles.empty}>Select a JSON file or add a stock template.</div>
             )}
           </section>
         </section>
@@ -594,15 +572,15 @@ export default function StockWorkbench() {
           <div className={styles.panelHead}>
             <div>
               <p className={styles.kicker}>Dashboard</p>
-              <h2>股票当前信息与策略结论</h2>
+              <h2>Current stock data and strategy result</h2>
             </div>
             <button className={styles.refreshButton} disabled={isRefreshing} onClick={() => void refreshSnapshots()}>
-              {isRefreshing ? "刷新中" : "刷新行情"}
+              {isRefreshing ? "Refreshing" : "Refresh market data"}
             </button>
           </div>
           {message ? <p className={styles.statusMessage}>{message}</p> : null}
           <div className={styles.dashboardGrid}>
-            {dashboardRows.map(({ stock, snapshot, evaluation }) => (
+            {dashboardRows.map(({ stock, snapshot, error, evaluation }) => (
               <article className={styles.stockOverviewCard} key={stock.symbol}>
                 <div className={styles.overviewHead}>
                   <div>
@@ -617,8 +595,16 @@ export default function StockWorkbench() {
                     <strong>{snapshot?.market ?? stock.market}</strong>
                   </div>
                   <div>
-                    <span>Price</span>
+                    <span>Current Price</span>
                     <strong>{snapshot ? `${snapshot.currency} ${snapshot.price.toFixed(2)}` : "--"}</strong>
+                  </div>
+                  <div>
+                    <span>100D MA</span>
+                    <strong>{snapshot?.movingAverage100 ? snapshot.movingAverage100.toFixed(2) : "--"}</strong>
+                  </div>
+                  <div>
+                    <span>200D MA</span>
+                    <strong>{snapshot?.movingAverage200 ? snapshot.movingAverage200.toFixed(2) : "--"}</strong>
                   </div>
                   <div>
                     <span>Change</span>
@@ -627,12 +613,20 @@ export default function StockWorkbench() {
                     </strong>
                   </div>
                   <div>
-                    <span>Score</span>
+                    <span>Algorithm Score</span>
                     <strong>{evaluation.score}</strong>
                   </div>
                 </div>
-                <p>{evaluation.reason}</p>
-                <button onClick={() => selectStock(stock.symbol)}>打开 JSON 文件夹</button>
+                <p>{error ? `Data unavailable: ${error}` : evaluation.reason}</p>
+                <small className={styles.dataSource}>
+                  Data source: {snapshot?.source ?? "Not loaded"} / Updated: {snapshot?.updatedAt ?? "--"}
+                </small>
+                <div className={styles.overviewActions}>
+                  <button onClick={() => selectStock(stock.symbol)}>Open JSON folder</button>
+                  <button className={styles.deleteOverviewButton} disabled={isSavingLibrary} onClick={() => deleteStock(stock.symbol)}>
+                    Delete
+                  </button>
+                </div>
               </article>
             ))}
           </div>

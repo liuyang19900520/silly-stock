@@ -347,7 +347,7 @@
 
 .dashboardGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
   gap: 14px;
 }
 
@@ -378,7 +378,8 @@
 
 .overviewHead span,
 .overviewMetrics span,
-.stockOverviewCard p {
+.stockOverviewCard p,
+.dataSource {
   color: #52615b;
   font-size: 13px;
   line-height: 1.45;
@@ -398,7 +399,7 @@
 
 .overviewMetrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
   gap: 8px;
 }
 
@@ -419,8 +420,23 @@
   margin: 0;
 }
 
+.dataSource {
+  display: block;
+}
+
+.overviewActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .stockOverviewCard button {
   justify-self: start;
+}
+
+.deleteOverviewButton {
+  border-color: rgba(168, 61, 53, 0.28) !important;
+  color: #a83d35 !important;
 }
 
 .positive {
@@ -462,5 +478,9 @@
 
   .overviewMetrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboardGrid {
+    grid-template-columns: 1fr;
   }
 }
