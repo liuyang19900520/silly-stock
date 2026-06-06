@@ -25,7 +25,7 @@ Browser
   -> Next.js API route
   -> feature validation or scoring
   -> infrastructure adapter
-  -> S3 / Stooq / Yahoo Finance
+  -> S3 / Yahoo Finance
 ```
 
 ## Ownership
