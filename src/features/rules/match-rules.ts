@@ -1,4 +1,5 @@
-import { MatchRule, MarketSnapshot, RuleMatch } from "./types";
+import { MarketSnapshot } from "@/features/market-data/types";
+import { MatchRule, RuleMatch } from "./types";
 
 function compare(actual: string | number, rule: MatchRule) {
   if (rule.operator === "contains") {

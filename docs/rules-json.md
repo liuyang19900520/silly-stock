@@ -30,6 +30,8 @@ The app accepts JSON only. The top-level shape can be either an array of rules o
 - `open`
 - `high`
 - `low`
+- `movingAverage100`
+- `movingAverage200`
 - `volume`
 - `changePercent`
 - `currency`

@@ -1,4 +1,4 @@
-import { MarketSnapshot, StockMarket } from "@/lib/rules/types";
+import { MarketSnapshot, StockMarket } from "../types";
 
 type StooqRow = {
   Symbol: string;
@@ -122,7 +122,6 @@ export async function fetchMarketSnapshot(symbol: string): Promise<MarketSnapsho
   const url = `https://stooq.com/q/l/?s=${encodeURIComponent(
     identity.stooqSymbol,
   )}&f=sd2t2ohlcvn&h&e=csv`;
-
   const response = await fetch(url, { next: { revalidate: 60 } });
 
   if (!response.ok) {

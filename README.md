@@ -1,92 +1,57 @@
 # Silly Stock
 
-Silly Stock is a small AI-native stock research MVP. The current version keeps the product intentionally simple:
+Silly Stock is a small AI-native stock research tool. It fetches current market data, evaluates
+user-managed JSON strategies, and presents a deterministic score and decision.
 
-- Enter a stock symbol.
-- Paste a JSON rule document.
-- Fetch the latest available market snapshot.
-- Match the snapshot against your rules.
-- Save checked stocks into a local registered list.
+Production: [https://silly-stock.vercel.app](https://silly-stock.vercel.app)
 
-It supports automatic market detection for common US and Japanese stock symbols.
+> Research support only. The application does not provide personalized investment advice.
 
-> This tool is research support only. It does not provide buy, sell, or hold advice.
+## Current Features
 
-## Features
+- US and Japanese stock-symbol detection
+- Current quote plus 100-day and 200-day moving averages
+- S3-backed strategy JSON create, read, update, and delete
+- Per-stock strategy and indicator folders
+- Deterministic weighted scoring with explainable results
+- Decisions: `Overbought`, `Buy`, `Hold`, `Sell`, `Oversold`
+- GitHub Actions verification and automatic Vercel deployment
 
-- JSON-only rule input
-- US and Japan market detection
-- Delayed quote lookup through Stooq CSV data
-- Mock fallback data when the market request fails
-- Local registered-stock list stored in browser `localStorage`
-- Rule match summary and per-rule result display
-- GitHub Actions CI for lint and production build
+## Architecture
 
-## Tech Stack
+```text
+Browser -> Next.js API -> feature logic -> S3 / market-data providers
+```
 
-- Next.js App Router
-- React
-- TypeScript
-- CSS Modules
-- GitHub Actions
+Business logic lives in `src/features`, external-service code in `src/infrastructure`, and API
+routes remain thin. See [docs/architecture.md](docs/architecture.md).
 
-## Getting Started
-
-Production URL: [https://silly-stock.vercel.app](https://silly-stock.vercel.app)
-
-Install dependencies:
+## Local Development
 
 ```bash
 npm ci
-```
-
-Run the development server:
-
-```bash
+cp .env.example .env.local
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Local AWS access uses the standard AWS SDK credential chain. Do not place administrator credentials
+in `.env.local`.
 
-## Scripts
+## Commands
 
 ```bash
 npm run dev
-npm run lint
-npm run typecheck
-npm run build
-npm run start
+npm run verify
+npm run smoke:production
+npm run smoke:production:crud
 ```
 
-## Rules
+## Documentation
 
-Rules must be JSON. See [docs/rules-json.md](docs/rules-json.md).
+- [Architecture](docs/architecture.md)
+- [AI development workflow](docs/ai-development.md)
+- [Deployment](docs/deployment.md)
+- [JSON rules](docs/rules-json.md)
 
-Example:
-
-```json
-{
-  "rules": [
-    {
-      "field": "market",
-      "operator": "=",
-      "value": "US",
-      "conclusion": "This matched my US stock rule set"
-    },
-    {
-      "field": "price",
-      "operator": "<",
-      "value": 200,
-      "conclusion": "Price is inside my preferred range"
-    }
-  ]
-}
-```
-
-## Deployment
-
-See [docs/deployment.md](docs/deployment.md).
-
-Recommended low-cost default: Vercel.
-
-AWS Amplify is also supported and is a good option if this project will later integrate deeply with AWS services.
+Project-specific agent instructions are in [AGENTS.md](AGENTS.md) and
+[.agents/skills/silly-stock-development/SKILL.md](.agents/skills/silly-stock-development/SKILL.md).

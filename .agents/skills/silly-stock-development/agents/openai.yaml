@@ -1,0 +1,4 @@
+interface:
+  display_name: "Silly Stock Development"
+  short_description: "Develop and verify the Silly Stock application safely"
+  default_prompt: "Implement and verify a Silly Stock change using the project architecture, JSON strategy contract, and deployment checks."
