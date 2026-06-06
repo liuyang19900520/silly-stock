@@ -10,7 +10,7 @@ Production: [https://silly-stock.vercel.app](https://silly-stock.vercel.app)
 ## Current Features
 
 - US and Japanese stock-symbol detection
-- Current quote plus 100-day and 200-day moving averages
+- Yahoo Finance current daily quote plus 100-day and 200-day moving averages
 - S3-backed strategy JSON create, read, update, and delete
 - Per-stock strategy and indicator folders
 - Deterministic weighted scoring with explainable results

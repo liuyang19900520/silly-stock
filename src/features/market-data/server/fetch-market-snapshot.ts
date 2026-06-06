@@ -1,23 +1,29 @@
 import { MarketSnapshot, StockMarket } from "../types";
 
-type StooqRow = {
-  Symbol: string;
-  Date: string;
-  Time: string;
-  Open: string;
-  High: string;
-  Low: string;
-  Close: string;
-  Volume: string;
-  Name: string;
-};
-
 type MarketIdentity = {
   market: StockMarket;
   displaySymbol: string;
-  stooqSymbol: string;
   yahooSymbol: string;
-  currency: string;
+  defaultCurrency: string;
+};
+
+type YahooChart = {
+  meta?: {
+    currency?: string;
+    symbol?: string;
+    longName?: string;
+    shortName?: string;
+  };
+  timestamp?: number[];
+  indicators?: {
+    quote?: {
+      open?: Array<number | null>;
+      high?: Array<number | null>;
+      low?: Array<number | null>;
+      close?: Array<number | null>;
+      volume?: Array<number | null>;
+    }[];
+  };
 };
 
 function detectMarket(symbol: string): MarketIdentity {
@@ -28,64 +34,27 @@ function detectMarket(symbol: string): MarketIdentity {
     return {
       market: "JP",
       displaySymbol: `${withoutTokyoSuffix}.T`,
-      stooqSymbol: `${withoutTokyoSuffix}.jp`,
       yahooSymbol: `${withoutTokyoSuffix}.T`,
-      currency: "JPY",
+      defaultCurrency: "JPY",
     };
   }
 
   if (/^[A-Z][A-Z0-9.-]{0,9}(\.US)?$/.test(raw)) {
     const usSymbol = raw.replace(/\.US$/, "");
-
     return {
       market: "US",
       displaySymbol: usSymbol,
-      stooqSymbol: `${usSymbol.toLowerCase()}.us`,
       yahooSymbol: usSymbol,
-      currency: "USD",
+      defaultCurrency: "USD",
     };
   }
 
   return {
     market: "UNKNOWN",
     displaySymbol: raw,
-    stooqSymbol: raw.toLowerCase(),
     yahooSymbol: raw,
-    currency: "USD",
+    defaultCurrency: "USD",
   };
-}
-
-function parseCsvLine(line: string) {
-  const values: string[] = [];
-  let current = "";
-  let quoted = false;
-
-  for (const char of line) {
-    if (char === '"') {
-      quoted = !quoted;
-    } else if (char === "," && !quoted) {
-      values.push(current);
-      current = "";
-    } else {
-      current += char;
-    }
-  }
-
-  values.push(current);
-  return values;
-}
-
-function parseStooqCsv(csv: string): StooqRow | null {
-  const [headerLine, rowLine] = csv.trim().split("\n");
-
-  if (!headerLine || !rowLine || rowLine.includes("N/D")) {
-    return null;
-  }
-
-  const headers = parseCsvLine(headerLine);
-  const values = parseCsvLine(rowLine);
-
-  return Object.fromEntries(headers.map((header, index) => [header, values[index]])) as StooqRow;
 }
 
 function average(values: number[]) {
@@ -93,72 +62,75 @@ function average(values: number[]) {
   return Number((values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(2));
 }
 
-async function fetchMovingAverages(yahooSymbol: string) {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
-    yahooSymbol,
-  )}?range=1y&interval=1d`;
-  const response = await fetch(url, { next: { revalidate: 3600 } });
-
-  if (!response.ok) {
-    throw new Error("Historical market data request failed.");
-  }
-
-  const payload = (await response.json()) as {
-    chart?: { result?: { indicators?: { quote?: { close?: Array<number | null> }[] } }[] };
-  };
-  const closes =
-    payload.chart?.result?.[0]?.indicators?.quote?.[0]?.close?.filter(
-      (value): value is number => typeof value === "number" && !Number.isNaN(value),
-    ) ?? [];
-
-  return {
-    movingAverage100: average(closes.slice(-100)),
-    movingAverage200: average(closes.slice(-200)),
-  };
+function numberAt(values: Array<number | null> | undefined, index: number) {
+  const value = values?.[index];
+  return typeof value === "number" && !Number.isNaN(value) ? value : null;
 }
 
 export async function fetchMarketSnapshot(symbol: string): Promise<MarketSnapshot> {
   const identity = detectMarket(symbol);
-  const url = `https://stooq.com/q/l/?s=${encodeURIComponent(
-    identity.stooqSymbol,
-  )}&f=sd2t2ohlcvn&h&e=csv`;
-  const response = await fetch(url, { next: { revalidate: 60 } });
+  const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
+    identity.yahooSymbol,
+  )}?range=1y&interval=1d`;
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/json",
+      "User-Agent": "Mozilla/5.0 (compatible; SillyStock/1.0)",
+    },
+    next: { revalidate: 300 },
+  });
 
   if (!response.ok) {
-    throw new Error(`Stooq quote request failed with status ${response.status}.`);
+    throw new Error(`Yahoo Finance request failed with status ${response.status}.`);
   }
 
-  const row = parseStooqCsv(await response.text());
+  const payload = (await response.json()) as {
+    chart?: { result?: YahooChart[]; error?: { description?: string } | null };
+  };
+  const chart = payload.chart?.result?.[0];
+  const quote = chart?.indicators?.quote?.[0];
+  const closes = quote?.close ?? [];
+  const latestIndex = closes.findLastIndex(
+    (value) => typeof value === "number" && !Number.isNaN(value),
+  );
 
-  if (!row) {
-    throw new Error(`No Stooq quote data available for ${identity.displaySymbol}.`);
+  if (!chart || !quote || latestIndex < 0) {
+    throw new Error(
+      payload.chart?.error?.description ??
+        `No Yahoo Finance market data available for ${identity.displaySymbol}.`,
+    );
   }
 
-  const open = Number(row.Open);
-  const price = Number(row.Close);
-  const high = Number(row.High);
-  const low = Number(row.Low);
-  const volume = Number(row.Volume);
-  const movingAverages = await fetchMovingAverages(identity.yahooSymbol);
+  const price = numberAt(closes, latestIndex);
+  const open = numberAt(quote.open, latestIndex);
+  const high = numberAt(quote.high, latestIndex);
+  const low = numberAt(quote.low, latestIndex);
+  const volume = numberAt(quote.volume, latestIndex);
+  const validCloses = closes.filter(
+    (value): value is number => typeof value === "number" && !Number.isNaN(value),
+  );
+  const previousPrice = validCloses.at(-2) ?? price;
 
-  if ([open, price, high, low, volume].some((value) => Number.isNaN(value))) {
-    throw new Error(`Stooq quote data for ${identity.displaySymbol} is incomplete.`);
+  if (price === null || open === null || high === null || low === null || volume === null) {
+    throw new Error(`Yahoo Finance market data for ${identity.displaySymbol} is incomplete.`);
   }
 
   return {
-    symbol: identity.displaySymbol,
+    symbol: chart.meta?.symbol ?? identity.displaySymbol,
     market: identity.market,
-    name: row.Name || identity.displaySymbol,
-    price,
-    open,
-    high,
-    low,
-    movingAverage100: movingAverages.movingAverage100,
-    movingAverage200: movingAverages.movingAverage200,
+    name: chart.meta?.longName ?? chart.meta?.shortName ?? identity.displaySymbol,
+    price: Number(price.toFixed(2)),
+    open: Number(open.toFixed(2)),
+    high: Number(high.toFixed(2)),
+    low: Number(low.toFixed(2)),
+    movingAverage100: average(validCloses.slice(-100)),
+    movingAverage200: average(validCloses.slice(-200)),
     volume,
-    changePercent: open ? Number((((price - open) / open) * 100).toFixed(2)) : 0,
-    currency: identity.currency,
-    source: `Stooq delayed quote + Yahoo Finance daily chart (${identity.market})`,
-    updatedAt: `${row.Date}T${row.Time || "00:00:00"}Z`,
+    changePercent: previousPrice
+      ? Number((((price - previousPrice) / previousPrice) * 100).toFixed(2))
+      : 0,
+    currency: chart.meta?.currency ?? identity.defaultCurrency,
+    source: `Yahoo Finance daily chart (${identity.market})`,
+    updatedAt: new Date((chart.timestamp?.[latestIndex] ?? Date.now() / 1000) * 1000).toISOString(),
   };
 }
