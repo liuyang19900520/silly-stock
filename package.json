@@ -7,7 +7,10 @@
     "build": "next build",
     "typecheck": "tsc --noEmit --incremental false",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "verify": "npm run lint && npm run typecheck && npm run build",
+    "smoke:production": "node scripts/smoke-production.mjs",
+    "smoke:production:crud": "node scripts/smoke-production.mjs --crud"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1057.0",

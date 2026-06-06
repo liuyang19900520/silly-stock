@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { matchRules, summarizeMatches } from "@/lib/rules/match-rules";
-import { parseRules } from "@/lib/rules/parse-rules";
-import { fetchMarketSnapshot } from "@/lib/stocks/live-data";
+import { fetchMarketSnapshot } from "@/features/market-data/server/fetch-market-snapshot";
+import { matchRules, summarizeMatches } from "@/features/rules/match-rules";
+import { parseRules } from "@/features/rules/parse-rules";
 
 type AnalyzeBody = {
   symbol?: string;

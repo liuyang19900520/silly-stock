@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import {
-  getStrategyLibraryFromS3,
-  replaceStrategyLibraryInS3,
-} from "@/lib/strategy-library/s3";
-import { StockFolder } from "@/lib/strategy-library/types";
+  getStrategyLibrary,
+  replaceStrategyLibrary,
+} from "@/infrastructure/aws/s3-strategy-library-repository";
+import { parseStrategyLibrary } from "@/features/strategy-library/validation";
 
 export async function GET() {
   try {
-    return NextResponse.json({ library: await getStrategyLibraryFromS3() });
+    return NextResponse.json({ library: await getStrategyLibrary() });
   } catch (error) {
     return NextResponse.json(
       {
@@ -22,25 +22,24 @@ export async function GET() {
 }
 
 export async function PUT(request: Request) {
-  const body = (await request.json().catch(() => null)) as {
-    library?: StockFolder[];
-  } | null;
+  const body = (await request.json().catch(() => null)) as { library?: unknown } | null;
+  let library;
 
-  if (!Array.isArray(body?.library)) {
-    return NextResponse.json({ error: "library must be an array." }, { status: 400 });
+  try {
+    library = parseStrategyLibrary(body?.library);
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Invalid strategy library." },
+      { status: 400 },
+    );
   }
 
   try {
-    await replaceStrategyLibraryInS3(body.library);
-    return NextResponse.json({ library: body.library });
+    await replaceStrategyLibrary(library);
+    return NextResponse.json({ library });
   } catch (error) {
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to save strategy library.",
-      },
+      { error: error instanceof Error ? error.message : "Failed to save strategy library." },
       { status: 500 },
     );
   }

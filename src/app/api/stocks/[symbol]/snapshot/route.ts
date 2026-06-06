@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fetchMarketSnapshot } from "@/lib/stocks/live-data";
+import { fetchMarketSnapshot } from "@/features/market-data/server/fetch-market-snapshot";
 
 type RouteContext = {
   params: Promise<{ symbol: string }>;

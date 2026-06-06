@@ -1,4 +1,5 @@
-import { MatchRule, MarketSnapshot, RuleOperator } from "./types";
+import { MarketSnapshot } from "@/features/market-data/types";
+import { MatchRule, RuleOperator } from "./types";
 
 const supportedFields = new Set<keyof MarketSnapshot>([
   "symbol",
